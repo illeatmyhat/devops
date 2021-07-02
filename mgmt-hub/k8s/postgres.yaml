@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-deployment
+  namespace: openhorizon
+  labels:
+    app: open-horizon
+    component: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: open-horizon
+      component: postgres
+  template:
+    metadata:
+      labels:
+        app: open-horizon
+        component: postgres
+    spec:
+      restartPolicy: Always
+      containers:
+        - name: postgres
+          image: quay.io/centos7/postgresql-13-centos7:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POSTGRES_DB
+              value: exchange
+            - name: POSTGRES_USER
+              value: admin
+            - name: POSTGRESQL_ADMIN_PASSWORD
+              value: foobar
+            - name: POSTGRES_HOST_AUTH_METHOD
+              value: trust
+          volumeMounts:
+            - name: postgres-pvc
+              mountPath: /var/lib/postgresql/data
+              subPath: pgdata
+          livenessProbe:
+            exec:
+              command:
+                - "pg_isready -U admin"
+            failureThreshold: 3
+            timeoutSeconds: 5
+            periodSeconds: 15
+      volumes:
+        - name: postgres-pvc
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+--- 
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: 
+  name: postgres-pvc
+  labels:
+    app: openhorizon
+    component: postgres
+  annotations:
+    volume.beta.kubernetes.io/mount-options: "dir_mode=0777,file_mode=0777,uid=1000,gid=1000"
+spec: 
+  accessModes: 
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  labels:
+    app: openhorizon
+    component: postgres
+spec:
+  selector:
+    app: open-horizon
+    component: postgres
+  ports:
+    - protocol: TCP
+      port: 3090
+      targetPort: 8080
+
+# postgres:
+#     image: ${POSTGRES_IMAGE_NAME}:${POSTGRES_IMAGE_TAG}
+#     container_name: postgres
+#     restart: always
+#     volumes:
+#       - postgresvol:/var/lib/postgresql/data
+#     networks:
+#       - horizonnet
+#     environment:
+#       - POSTGRES_DB=${EXCHANGE_DATABASE}
+#       - POSTGRES_USER=${POSTGRES_USER}
+#       - POSTGRES_HOST_AUTH_METHOD=trust
+#     healthcheck:
+#       test: pg_isready -U ${POSTGRES_USER}
+#       interval: 15s
+#       timeout: 5s
+#       retries: 3

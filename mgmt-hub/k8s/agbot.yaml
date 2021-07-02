@@ -1,0 +1,166 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agbot-deployment
+  namespace: openhorizon
+  labels:
+    app: open-horizon
+    component: agbot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: open-horizon
+      component: agbot
+  template:
+    metadata:
+      labels:
+        app: open-horizon
+        component: agbot
+    spec:
+      restartPolicy: Always
+      containers:
+        - name: agbot
+          image: openhorizon/amd64_agbot:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ANAX_LOG_LEVEL
+              value: "3"
+            # HZN_VAR_BASE will default to /var/horizon, which is what we want
+            # - name: HZN_VAR_BASE
+            #   value: "/home/agbotuser"
+          volumeMounts:
+            - name: agbot-config
+              mountPath: /etc/horizon
+            - name: hzn-cert
+              mountPath: /home/agbotuser/keys
+              readOnly: true
+          livenessProbe:
+            exec:
+              command:
+                - "test $$(curl -sS -w %{http_code} -o /dev/null http://localhost:8080/status) -eq 200"
+            failureThreshold: 4
+            timeoutSeconds: 5
+            periodSeconds: 20
+      volumes:
+        - name: agbot-config
+          configMap:
+            name: agbot-config
+            items:  
+              - key: agbot.json
+                path: "agbot.json.tmpl"
+        - name: hzn-cert
+          secret:
+            secretName: horizon-mgmt-hub
+            items: 
+              - key: tls.crt
+                path: "horizonMgmtHub.crt"
+              - key: tls.key
+                path: "horizonMgmtHub.key"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agbot-config
+  namespace: openhorizon
+data:
+  agbot.json: |-
+    {
+      "AgreementBot": {
+          "DBPath": "",
+          "Postgresql": {
+              "Host": "postgres",
+              "Port": "5432",
+              "User": "admin",
+              "Password": "",
+              "DBName": "exchange",
+              "SSLMode": "disable",
+              "MaxOpenConnections": 20
+          },
+          "Partitions": "part0",
+          "TxLostDelayTolerationSeconds": 120,
+          "AgreementWorkers": 5,
+          "ProtocolTimeoutS": 120,
+          "AgreementTimeoutS": 360,
+          "NoDataIntervalS": 300,
+          "ActiveAgreementsURL": "",
+          "ActiveAgreementsUser": "",
+          "ActiveAgreementsPW": "",
+          "PolicyPath": "/home/agbotuser/policy.d",
+          "NewContractIntervalS": 5,
+          "ProcessGovernanceIntervalS": 5,
+          "IgnoreContractWithAttribs": "ethereum_account",
+          "ExchangeURL": "http://exchange.openhorizon.svc.cluster.local:8080/v1",
+          "ExchangeId": "IBM/agbot",
+          "ExchangeToken":"UYBhlmjjmLGHX5H6ZVikZQlkwKyrAD",
+          "ExchangeVersionCheckIntervalM": 1,
+          "ExchangeHeartbeat": 5,
+          "ExchangeMessageTTL": 1800,
+          "ActiveDeviceTimeoutS": 180,
+          "DefaultWorkloadPW": "",
+          "MessageKeyPath": "msgKey",
+          "APIListen": "0.0.0.0:8080",
+          "PurgeArchivedAgreementHours": 1,
+          "CheckUpdatedPolicyS": 7,
+          "CSSURL": "http://css.openhorizon.svc.cluster.local:8080",
+          "CSSSSLCert": "/home/agbotuser/keys/horizonMgmtHub.crt",
+          "SecureAPIListenHost": "0.0.0.0",
+          "SecureAPIListenPort": "8083",
+          "SecureAPIServerKey": "/home/agbotuser/keys/horizonMgmtHub.key",
+          "SecureAPIServerCert": "/home/agbotuser/keys/horizonMgmtHub.crt",
+          "AgreementBatchSize": 1300
+      },
+      "ArchSynonyms": {
+          "x86_64": "amd64",
+          "armhf": "arm",
+          "aarch64": "arm64"
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agbot-service
+spec:
+  selector:
+    app: open-horizon
+    component: agbot
+  ports:
+    - name: agbot-port
+      protocol: TCP
+      port: 3110
+      targetPort: 8080
+    - name: agbot-secure-port
+      protocol: TCP
+      port: 3111
+      targetPort: 8083
+
+# agbot:
+#     image: ${AGBOT_IMAGE_NAME}:${AGBOT_IMAGE_TAG}
+#     container_name: agbot
+#     restart: always
+#     ports:
+#       - 127.0.0.1:${AGBOT_PORT}:8080
+#       - ${HZN_LISTEN_IP}:${AGBOT_SECURE_PORT}:8083
+#     networks:
+#       - horizonnet
+#     volumes:
+#       - ${ETC}/horizon/agbot.json:/etc/horizon/anax.json.tmpl:${VOLUME_MODE}
+#       # deploy-mgmt-hub.sh will ensure this dir is empty if we want to use http
+#       - ${CERT_DIR}:/home/agbotuser/keys:${VOLUME_MODE}
+#       # when docker mounts this it "inherits" the permissions of the existing msgKey dir (which the agbot dockerfile sets the permissions correctly)
+#       - agbotmsgkeyvol:/var/horizon/msgKey
+#     environment:
+#       - ANAX_LOG_LEVEL=${ANAX_LOG_LEVEL}
+#       # HZN_VAR_BASE will default to /var/horizon, which is what we want
+#       # - HZN_VAR_BASE=/home/agbotuser
+#     healthcheck:
+#       # Need to wait a while for this, because the deployment script does not add the org, user, agbot until after the containers are up
+#       test: test $$(curl -sS -w %{http_code} -o /dev/null http://localhost:8080/status) -eq 200
+#       interval: 20s
+#       timeout: 5s
+#       retries: 4
+#     depends_on:
+#       - exchange-api
+#       - css-api
+#       - postgres

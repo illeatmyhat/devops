@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: exchange-deployment
+  namespace: openhorizon
+  labels:
+    app: open-horizon
+    component: exchange
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: open-horizon
+      component: exchange
+  template:
+    metadata:
+      labels:
+        app: open-horizon
+        component: exchange
+    spec:
+      restartPolicy: Always
+      containers:
+        - name: exchange
+          image: openhorizon/amd64_exchange-api:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: EXCHANGE_ROOT_PW_BCRYPTED
+              value: "QG0TWFDslppp41mYdlSATBYRo0lO5k" # a random 30 char password
+          volumeMounts:
+            - name: exchange-config
+              mountPath: /etc/horizon/exchange
+          livenessProbe:
+            exec:
+              command:
+                - "test $$(curl -sS -w %{http_code} -o /dev/null http://localhost:8080/v1/admin/version) -eq 200"
+            failureThreshold: 3
+            timeoutSeconds: 5
+            periodSeconds: 15
+      volumes:
+        - name: exchange-config
+          configMap:
+            name: exchange-config
+            items:  
+              - key: exchange.json
+                path: "exchange-api.tmpl"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: exchange-config
+  namespace: openhorizon
+data:
+  exchange.json: |-
+    {
+      "api": {
+        "db": {
+          "jdbcUrl": "jdbc:postgresql://postgres.openhorizon.svc.cluster.local:5432/exchange",
+          "user": "admin",
+          "password": ""
+        },
+        "logging": {
+          "level": "INFO"
+        },
+        "root": {
+          "password": "$EXCHANGE_ROOT_PW_BCRYPTED"
+        }
+      }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: exchange-service
+spec:
+  selector:
+    app: open-horizon
+    component: exchange
+  ports:
+    - protocol: TCP
+      port: 3090
+      targetPort: 8080
+
+# exchange-api:
+#     image:  ${EXCHANGE_IMAGE_NAME}:${EXCHANGE_IMAGE_TAG}
+#     container_name: exchange-api
+#     restart: always
+#     ports:
+#       - ${HZN_LISTEN_IP}:${EXCHANGE_PORT}:8080
+#     networks:
+#       - horizonnet
+#     environment:
+#       # need to leave this as a variable in the config file because otherwise the $ in the pw value gets interpreted as an env var
+#       - EXCHANGE_ROOT_PW_BCRYPTED=$EXCHANGE_ROOT_PW_BCRYPTED
+#     volumes:
+#       - ${ETC}/horizon/exchange.json:/etc/horizon/exchange/exchange-api.tmpl:${VOLUME_MODE}
+#     # Note: compose version 3 does this health check forever, so do not do it very often. Plus it is no longer a condition for starting services dependent on it.
+#     healthcheck:
+#       test: test $$(curl -sS -w %{http_code} -o /dev/null http://localhost:8080/v1/admin/version) -eq 200
+#       interval: 15s
+#       timeout: 5s
+#       retries: 3
+#     depends_on:
+#       - postgres

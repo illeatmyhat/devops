@@ -1,0 +1,21 @@
+apiVersion: cert-manager.io/v1alpha2
+kind: Issuer
+metadata:
+  name: self-signed-issuer
+  namespace: openhorizon
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1alpha2
+kind: Certificate
+metadata:
+  name: horizon-mgmt-hub
+  namespace: openhorizon
+spec:
+  secretName: horizon-mgmt-hub
+  dnsNames:
+  - "localhost"
+  - "*.openhorizon.svc.cluster.local"
+  - "*.openhorizon"
+  issuerRef:
+    name: self-signed-issuer

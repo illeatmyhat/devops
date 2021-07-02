@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongo-deployment
+  namespace: openhorizon
+  labels:
+    app: open-horizon
+    component: mongo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: open-horizon
+      component: mongo
+  template:
+    metadata:
+      labels:
+        app: open-horizon
+        component: mongo
+    spec:
+      restartPolicy: Always
+      containers:
+        - name: mongo
+          image: centos/mongodb-36-centos7:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MONGODB_ADMIN_PASSWORD
+              value: foobar
+          volumeMounts:
+            - name: mongo-pvc
+              mountPath: /data/db
+              subPath: db
+            - name: mongo-pvc
+              mountPath: /var/edge-sync-service/persist
+              subPath: edge-sync-service
+          livenessProbe:
+            exec:
+              command:
+                - "echo show dbs | mongo localhost:27017/test --quiet"
+            failureThreshold: 3
+            timeoutSeconds: 5
+            periodSeconds: 15
+      volumes:
+        - name: mongo-pvc
+          persistentVolumeClaim:
+            claimName: mongo-pvc
+--- 
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: 
+  name: mongo-pvc
+  labels:
+    app: openhorizon
+    component: mongo
+  annotations:
+    volume.beta.kubernetes.io/mount-options: "dir_mode=0777,file_mode=0777,uid=1000,gid=1000"
+spec: 
+  accessModes: 
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-service
+  labels:
+    app: openhorizon
+    component: mongo
+spec:
+  selector:
+    app: open-horizon
+    component: mongo
+  ports:
+    - protocol: TCP
+      port: 27017
+      targetPort: 8080
+
+# mongo:
+#   image: ${MONGO_IMAGE_NAME}:${MONGO_IMAGE_TAG}
+#   container_name: mongo
+#   restart: always
+#   networks:
+#     - horizonnet
+#   volumes:
+#     - mongovol:/var/edge-sync-service/persist
+#   healthcheck:
+#     test: echo show dbs | mongo localhost:${MONGO_PORT}/test --quiet
+#     interval: 15s
+#     timeout: 5s
+#     retries: 3

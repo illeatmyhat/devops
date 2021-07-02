@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: css-deployment
+  namespace: openhorizon
+  labels:
+    app: open-horizon
+    component: css
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: open-horizon
+      component: css
+  template:
+    metadata:
+      labels:
+        app: open-horizon
+        component: css
+    spec:
+      restartPolicy: Always
+      containers:
+        - name: css-api
+          image: openhorizon/amd64_cloud-sync-service:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: HZN_EXCHANGE_URL
+              value: http://exchange.openhorizon.svc.cluster.local:8080/v1
+          volumeMounts:
+            - name: postgres-pvc
+              mountPath: /var/lib/postgresql/data
+            - name: hzn-cert
+              mountPath: /home/cssuser/keys
+              readOnly: true
+          livenessProbe:
+            exec:
+              command:
+                - "pg_isready -U admin"
+            failureThreshold: 3
+            timeoutSeconds: 5
+            periodSeconds: 15
+      volumes:
+        - name: postgres-pvc
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+        - name: hzn-cert
+          secret:
+            secretName: horizon-mgmt-hub
+            items: 
+              - key: tls.crt
+                path: "horizonMgmtHub.crt"
+              - key: tls.key
+                path: "horizonMgmtHub.key"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: css-config
+  namespace: openhorizon
+data:
+  css.conf: |-
+    NodeType CSS
+    ListeningType secure
+    UnsecureListeningPort 8080
+    SecureListeningPort 8080
+    ServerCertificate /home/cssuser/keys/horizonMgmtHub.crt
+    ServerKey /home/cssuser/keys/horizonMgmtHub.key
+    CommunicationProtocol HTTP
+    LogLevel INFO
+    LogTraceDestination stdout
+    TraceLevel INFO
+    MongoAddressCsv mongo.openhorizon.svc.cluster.local:27017
+    MongoUseSSL false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: css-service
+spec:
+  selector:
+    app: open-horizon
+    component: css
+  ports:
+    - protocol: TCP
+      port: 9443
+      targetPort: 8080
+  
+# css-api:
+#   image: ${CSS_IMAGE_NAME}:${CSS_IMAGE_TAG}
+#   container_name: css-api
+#   restart: always
+#   ports:
+#     - ${HZN_LISTEN_IP}:${CSS_PORT}:8080
+#   networks:
+#     - horizonnet
+#   volumes:
+#     - ${ETC}/horizon/css.conf:/etc/edge-sync-service/sync.conf.tmpl:${VOLUME_MODE}
+#     # deploy-mgmt-hub.sh will ensure this dir is empty if we want to use http
+#     - ${CERT_DIR}:/home/cssuser/keys:${VOLUME_MODE}
+#     #todo: i do not think this needed in this container?
+#     #- mongovol:/var/edge-sync-service/persist
+#   environment:
+#     - HZN_EXCHANGE_URL=http://exchange-api:8080/v1
+#   healthcheck:
+#     test: test $$(curl -sS -w %{http_code} -k -u ${EXCHANGE_USER_ORG}/admin:${EXCHANGE_USER_ADMIN_PW} -o /dev/null ${HZN_TRANSPORT}://localhost:8080/api/v1/health) -eq 200
+#     interval: 15s
+#     timeout: 5s
+#     retries: 3
+#   depends_on:
+#     - exchange-api
+#     - mongo
