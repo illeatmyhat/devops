@@ -18,10 +18,6 @@ spec:
         app: open-horizon
         component: sdo-owner-services
     spec:
-      securityContext:
-        runAsUser: 1000620000
-        runAsGroup: 1000620000
-        fsGroup: 1000620000
       restartPolicy: Always
       containers:
         - name: sdo-owner-services
